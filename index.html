@@ -1,18 +1,130 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = "https://TON-PROJET.supabase.co";
-const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhvcWN5cWFmZHhid2hteWJwdW5oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAwNDA0MjQsImV4cCI6MjA5NTYxNjQyNH0.b0d7PxMb8hob73HY_PM3KNYytX2avFuVLqTmDkZOoFM";
+const supabase = createClient(
+  "https://hoqcyqafdxbwhmybpunh.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhvcWN5cWFmZHhid2hteWJwdW5oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAwNDA0MjQsImV4cCI6MjA5NTYxNjQyNH0.b0d7PxMb8hob73HY_PM3KNYytX2avFuVLqTmDkZOoFM"
+);
+
+export default function PremiumScratchApp() {
+  const ADMIN_CODE = "LaTaverneMcCain2026";
+
+  const [page, setPage] = useState("login");
+  const [code, setCode] = useState("");
+  const [ticket, setTicket] = useState(null);
+  const [adminPassword, setAdminPassword] = useState("");
+  const [adminConnected, setAdminConnected] = useState(false);
+  const [gain, setGain] = useState(100);
+  const [generatedCode, setGeneratedCode] = useState("");
+  const [logs, setLogs] = useState([]);
+  const [scratchPercent, setScratchPercent] = useState(0);
+  const [error, setError] = useState("");
+
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    if (page === "ticket") {
+      setupScratch();
+    }
+  }, [page]);
+
+  const generateCode = () => {
+    return (
+      "VIP-" +
+      Math.random().toString(36).substring(2, 8).toUpperCase()
+    );
+  };
+
+  const loadLogs = async () => {
+    const { data } = await supabase
+      .from("tickets")
+      .select("*")
+      .order("id", { ascending: false });
+
+    if (data) setLogs(data);
+  };
+
+  const createTicket = async () => {
+    const newCode = generateCode();
+
+    const { error } = await supabase.from("tickets").insert([
+      {
+        code: newCode,
+        gain,
+        used: false,
+      },
+    ]);
+
+    if (error) {
+      setError("Erreur lors de la génération");
+      return;
+    }
+
+    setGeneratedCode(newCode);
+    loadLogs();
+  };
+
+  const login = async () => {
+    const { data } = await supabase
+      .from("tickets")
+      .select("*")
+      .eq("code", code)
+      .single();
+
+    if (!data) {
+      setError("Code invalide");
+      return;
+    }
+
+    if (data.used) {
+      setError("Code déjà utilisé");
+      return;
+    }
+
+    await supabase
+      .from("tickets")
+      .update({ used: true })
+      .eq("id", data.id);
+
+    setTicket(data);
+    setPage("ticket");
+  };
+
+  const connectAdmin = async () => {
+    if (adminPassword !== ADMIN_CODE) {
+      setError("Code admin incorrect");
+      return;
+    }
+
+    setAdminConnected(true);
+    loadLogs();
+  };
+
+  const setupScratch = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+
+    ctx.fillStyle = "#d1d5db";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = "#111827";
+    ctx.font = "bold 28px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("GRATTE ICI", canvas.width / 2, canvas.height / 2);
+
+    let drawing = false;
+
+    const scratch = (x, y) => {
+      ctx.globalCompositeOperation = "destination-out";
       ctx.beginPath();
-      ctx.arc(x, y, 25, 0, Math.PI * 2);
+      ctx.arc(x, y, 30, 0, Math.PI * 2);
       ctx.fill();
 
-      calculateScratch();
-    };
-
-    const calculateScratch = () => {
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const pixels = imageData.data;
+
       let transparent = 0;
 
       for (let i = 3; i < pixels.length; i += 4) {
@@ -26,369 +138,218 @@ const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
       if (percent >= 70) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         setScratchPercent(100);
-        return;
+      } else {
+        setScratchPercent(percent);
       }
-
-      setScratchPercent(percent);
     };
 
     const getPos = (e) => {
       const rect = canvas.getBoundingClientRect();
-      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
 
       return {
-        x: clientX - rect.left,
-        y: clientY - rect.top,
+        x: (e.touches ? e.touches[0].clientX : e.clientX) - rect.left,
+        y: (e.touches ? e.touches[0].clientY : e.clientY) - rect.top,
       };
     };
 
-    const start = (e) => {
-      isDrawing = true;
+    canvas.onmousedown = (e) => {
+      drawing = true;
       const pos = getPos(e);
       scratch(pos.x, pos.y);
     };
 
-    const move = (e) => {
-      if (!isDrawing) return;
+    canvas.onmousemove = (e) => {
+      if (!drawing) return;
       const pos = getPos(e);
       scratch(pos.x, pos.y);
     };
 
-    const stop = () => {
-      isDrawing = false;
+    canvas.onmouseup = () => {
+      drawing = false;
     };
 
-    canvas.onmousedown = start;
-    canvas.onmousemove = move;
-    canvas.onmouseup = stop;
-    canvas.onmouseleave = stop;
+    canvas.ontouchstart = (e) => {
+      drawing = true;
+      const pos = getPos(e);
+      scratch(pos.x, pos.y);
+    };
 
-    canvas.ontouchstart = start;
-    canvas.ontouchmove = move;
-    canvas.ontouchend = stop;
+    canvas.ontouchmove = (e) => {
+      if (!drawing) return;
+      const pos = getPos(e);
+      scratch(pos.x, pos.y);
+    };
+
+    canvas.ontouchend = () => {
+      drawing = false;
+    };
   };
 
-  const styles = {
-    background: {
-      minHeight: "100vh",
-      background:
-        "linear-gradient(135deg, #0f172a 0%, #111827 50%, #1e293b 100%)",
-      color: "white",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: 20,
-      fontFamily: "Arial",
-    },
+  return (
+    <div className="min-h-screen bg-[#0c0a1f] text-white flex items-center justify-center overflow-hidden p-6">
+      <div className="absolute w-[500px] h-[500px] bg-yellow-400/20 blur-3xl rounded-full top-[-100px] left-[-100px]" />
+      <div className="absolute w-[400px] h-[400px] bg-pink-500/20 blur-3xl rounded-full bottom-[-100px] right-[-100px]" />
 
-    card: {
-      width: "100%",
-      maxWidth: 420,
-      background: "rgba(255,255,255,0.08)",
-      backdropFilter: "blur(14px)",
-      borderRadius: 28,
-      padding: 28,
-      boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
-      border: "1px solid rgba(255,255,255,0.1)",
-    },
+      {page === "login" && (
+        <div className="w-full max-w-sm bg-[#17132e] border border-white/10 rounded-[40px] p-7 shadow-2xl relative z-10">
+          <div className="bg-gradient-to-r from-yellow-400 to-orange-500 rounded-3xl p-5 mb-6 text-black font-bold text-2xl">
+            🎟️ Premium Ticket
+          </div>
 
-    input: {
-      width: "100%",
-      padding: 14,
-      borderRadius: 14,
-      border: "none",
-      marginTop: 12,
-      background: "rgba(255,255,255,0.12)",
-      color: "white",
-      outline: "none",
-      fontSize: 16,
-    },
-
-    button: {
-      width: "100%",
-      padding: 14,
-      borderRadius: 16,
-      border: "none",
-      background: "linear-gradient(135deg,#f59e0b,#f97316)",
-      color: "white",
-      fontWeight: "bold",
-      fontSize: 16,
-      cursor: "pointer",
-      marginTop: 16,
-      transition: "0.2s",
-    },
-  };
-
-  if (page === "ticket") {
-    return (
-      <div style={styles.background}>
-        <div style={{ ...styles.card, textAlign: "center", maxWidth: 500 }}>
-          <h1 style={{ fontSize: 36, marginBottom: 10 }}>
-            🎉 Ticket Gagnant
-          </h1>
-
-          <p style={{ opacity: 0.7, marginBottom: 20 }}>
-            100% gagnant
+          <h1 className="text-3xl font-bold mb-2">Entrer un code</h1>
+          <p className="text-white/50 mb-6">
+            Accédez à votre ticket gagnant.
           </p>
 
-          <div
-            style={{
-              position: "relative",
-              width: 320,
-              height: 180,
-              margin: "auto",
-              borderRadius: 24,
-              overflow: "hidden",
-              background:
-                "linear-gradient(135deg,#22c55e,#16a34a)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "0 20px 40px rgba(0,0,0,0.3)",
-            }}
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="VIP-XXXXXX"
+            className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 outline-none"
+          />
+
+          <button
+            onClick={login}
+            className="w-full mt-5 bg-gradient-to-r from-yellow-400 to-orange-500 text-black font-bold rounded-2xl p-4"
           >
-            <div
-              style={{
-                position: "absolute",
-                zIndex: 1,
-                textAlign: "center",
-              }}
-            >
-              <div style={{ fontSize: 22, opacity: 0.8 }}>
-                Tu as gagné
+            Ouvrir le ticket
+          </button>
+
+          <button
+            onClick={() => setPage("admin")}
+            className="w-full mt-3 bg-white/5 rounded-2xl p-4"
+          >
+            Panel admin
+          </button>
+
+          {error && (
+            <div className="mt-4 bg-red-500/20 border border-red-500/20 rounded-2xl p-4 text-red-300">
+              {error}
+            </div>
+          )}
+        </div>
+      )}
+
+      {page === "ticket" && ticket && (
+        <div className="w-full max-w-sm bg-[#17132e] rounded-[40px] p-6 shadow-2xl relative z-10">
+          <div className="bg-gradient-to-r from-pink-500 to-orange-400 rounded-3xl p-5 mb-6">
+            <div className="text-sm text-white/70">Ticket gagnant</div>
+            <div className="text-4xl font-black mt-2">
+              {ticket.gain}€
+            </div>
+          </div>
+
+          <div className="bg-white rounded-3xl p-5 text-black relative overflow-hidden">
+            <div className="text-sm text-gray-500 mb-2">Code Ticket</div>
+            <div className="font-bold mb-5">{ticket.code}</div>
+
+            <div className="relative h-[200px] rounded-2xl overflow-hidden bg-gradient-to-r from-green-400 to-emerald-500 flex items-center justify-center">
+              <div className="absolute z-10 text-center">
+                <div className="text-xl font-bold text-white">
+                  Tu as gagné
+                </div>
+                <div className="text-5xl font-black text-white mt-2">
+                  {ticket.gain}€
+                </div>
               </div>
-              <div
-                style={{
-                  fontSize: 48,
-                  fontWeight: "bold",
-                  marginTop: 8,
-                }}
-              >
-                {ticketData.gain}€
-              </div>
+
+              <canvas
+                ref={canvasRef}
+                width={320}
+                height={200}
+                className="absolute inset-0 z-20"
+              />
             </div>
 
-            <canvas
-              ref={canvasRef}
-              width={320}
-              height={180}
-              style={{
-                position: "absolute",
-                inset: 0,
-                zIndex: 2,
-                cursor: "grab",
-              }}
-            />
-          </div>
-
-          <div style={{ marginTop: 20, opacity: 0.7 }}>
-            Ticket gratté : {scratchPercent}%
+            <div className="mt-4 text-center text-gray-500">
+              Gratté : {scratchPercent}%
+            </div>
           </div>
         </div>
-      </div>
-    );
-  }
+      )}
 
-  if (page === "admin") {
-    return (
-      <div style={styles.background}>
-        <div style={styles.card}>
-          <h1 style={{ fontSize: 32, marginBottom: 10 }}>
-            ⚙️ Panel Admin
-          </h1>
-
+      {page === "admin" && (
+        <div className="w-full max-w-md bg-[#17132e] rounded-[40px] p-7 shadow-2xl relative z-10">
           {!adminConnected ? (
             <>
-              <p style={{ opacity: 0.7 }}>
-                Entrez le code admin
-              </p>
+              <h1 className="text-3xl font-bold mb-3">Panel Admin</h1>
 
               <input
-                style={styles.input}
                 type="password"
+                placeholder="Code admin"
                 value={adminPassword}
                 onChange={(e) => setAdminPassword(e.target.value)}
-                placeholder="Code admin"
+                className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 outline-none"
               />
 
-              <button style={styles.button} onClick={connectAdmin}>
+              <button
+                onClick={connectAdmin}
+                className="w-full mt-5 bg-gradient-to-r from-yellow-400 to-orange-500 text-black font-bold rounded-2xl p-4"
+              >
                 Se connecter
               </button>
             </>
           ) : (
             <>
-              <p style={{ opacity: 0.7 }}>
-                Génération d'un ticket gagnant
-              </p>
+              <div className="flex items-center justify-between mb-6">
+                <h1 className="text-3xl font-bold">Dashboard</h1>
+                <div className="bg-green-500/20 text-green-300 px-4 py-2 rounded-full text-sm">
+                  En ligne
+                </div>
+              </div>
 
               <input
-                style={styles.input}
                 type="number"
-                value={gainAmount}
-                onChange={(e) => setGainAmount(e.target.value)}
+                value={gain}
+                onChange={(e) => setGain(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 outline-none"
                 placeholder="Montant du gain"
               />
 
-              <button style={styles.button} onClick={generateTicket}>
-                Générer un code
+              <button
+                onClick={createTicket}
+                className="w-full mt-5 bg-gradient-to-r from-pink-500 to-orange-500 rounded-2xl p-4 font-bold"
+              >
+                Générer un ticket
               </button>
 
               {generatedCode && (
-                <div
-                  style={{
-                    marginTop: 20,
-                    background: "rgba(255,255,255,0.08)",
-                    padding: 18,
-                    borderRadius: 16,
-                    wordBreak: "break-word",
-                  }}
-                >
-                  <div style={{ opacity: 0.7, marginBottom: 6 }}>
+                <div className="mt-5 bg-black/30 rounded-3xl p-5 border border-white/10">
+                  <div className="text-white/50 text-sm mb-2">
                     Code généré
                   </div>
-
-                  <div
-                    style={{
-                      fontWeight: "bold",
-                      fontSize: 20,
-                    }}
-                  >
+                  <div className="font-black text-2xl break-all">
                     {generatedCode}
                   </div>
                 </div>
               )}
 
-              <div
-                style={{
-                  marginTop: 24,
-                  background: "rgba(255,255,255,0.05)",
-                  borderRadius: 18,
-                  padding: 16,
-                  maxHeight: 300,
-                  overflow: "auto",
-                }}
-              >
-                <h3 style={{ marginBottom: 12 }}>
-                  📜 Logs des tickets
-                </h3>
-
-                {logs.map((log, index) => (
+              <div className="mt-6 max-h-[300px] overflow-auto space-y-3">
+                {logs.map((log) => (
                   <div
-                    key={index}
-                    style={{
-                      padding: 12,
-                      borderRadius: 12,
-                      marginBottom: 10,
-                      background: "rgba(255,255,255,0.05)",
-                    }}
+                    key={log.id}
+                    className="bg-black/20 border border-white/5 rounded-2xl p-4"
                   >
-                    <div><b>Code :</b> {log.code}</div>
-                    <div><b>Gain :</b> {log.gain}€</div>
-                    <div>
-                      <b>Statut :</b> {log.used ? "Utilisé" : "Non utilisé"}
+                    <div className="font-bold text-lg">{log.code}</div>
+                    <div className="text-white/60">
+                      Gain : {log.gain}€
+                    </div>
+                    <div
+                      className={`mt-2 inline-block px-3 py-1 rounded-full text-sm ${
+                        log.used
+                          ? "bg-red-500/20 text-red-300"
+                          : "bg-green-500/20 text-green-300"
+                      }`}
+                    >
+                      {log.used ? "Utilisé" : "Disponible"}
                     </div>
                   </div>
                 ))}
               </div>
             </>
           )}
-
-          {error && (
-            <div
-              style={{
-                marginTop: 16,
-                background: "rgba(239,68,68,0.2)",
-                padding: 12,
-                borderRadius: 14,
-              }}
-            >
-              {error}
-            </div>
-          )}
-
-          <button
-            style={{
-              ...styles.button,
-              background: "rgba(255,255,255,0.1)",
-            }}
-            onClick={() => setPage("login")}
-          >
-            Retour
-          </button>
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={styles.background}>
-      <div style={styles.card}>
-        <div
-          style={{
-            width: 80,
-            height: 80,
-            borderRadius: 20,
-            background: "linear-gradient(135deg,#f59e0b,#f97316)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 40,
-            marginBottom: 20,
-          }}
-        >
-          🎟️
-        </div>
-
-        <h1 style={{ fontSize: 36, marginBottom: 10 }}>
-          Ticket à Gratter
-        </h1>
-
-        <p style={{ opacity: 0.7, lineHeight: 1.5 }}>
-          Entrez votre code d'accès unique pour découvrir votre gain.
-        </p>
-
-        <input
-          style={styles.input}
-          value={accessCode}
-          onChange={(e) => setAccessCode(e.target.value)}
-          placeholder="Entrez votre code"
-        />
-
-        <button style={styles.button} onClick={loginWithCode}>
-          Accéder au ticket
-        </button>
-
-        {error && (
-          <div
-            style={{
-              marginTop: 16,
-              background: "rgba(239,68,68,0.2)",
-              padding: 12,
-              borderRadius: 14,
-            }}
-          >
-            {error}
-          </div>
-        )}
-
-        <button
-          style={{
-            marginTop: 18,
-            background: "transparent",
-            color: "#f59e0b",
-            border: "none",
-            cursor: "pointer",
-            fontWeight: "bold",
-          }}
-          onClick={() => {
-            setPage("admin");
-            setError("");
-          }}
-        >
-          Ouvrir le panel admin ⚙️
-        </button>
-      </div>
+      )}
     </div>
   );
 }
